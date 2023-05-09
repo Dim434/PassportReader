@@ -297,6 +297,7 @@ extension PassportReader {
                 }
             } else {
                 if let error = error {
+                    Log.verbose("errrrrr \(error.localizedDescription)")
                     self?.invalidateSession(errorMessage:NFCViewDisplayMessage.error(error), error: error)
                 } else {
                     self?.updateReaderSessionMessage(alertMessage: NFCViewDisplayMessage.successfulRead)
@@ -468,7 +469,7 @@ extension PassportReader {
                 // OK we had an error - depending on what happened, we may want to try to re-read this
                 // E.g. we failed to read the last Datagroup because its protected and we can't
                 let errMsg = err?.value ?? "Unknown  error"
-                Log.error( "ERROR - \(errMsg)" )
+                Log.error( "ERROR(readNext) - \(errMsg)" )
                 if errMsg == "Session invalidated" || errMsg == "Class not supported" || errMsg == "Tag connection lost"  {
                     // Check if we have done Chip Authentication, if so, set it to nil and try to redo BAC
                     if self.caHandler != nil {
@@ -490,9 +491,11 @@ extension PassportReader {
                     // OK passport can't handle max length so drop it down
                     self.tagReader?.reduceDataReadingAmount()
                     completed(nil)
+                } else if errMsg == "Tag response error / no response" {
+                    self.readerSession?.restartPolling()
                 } else {
                     // Retry
-                    if self.elementReadAttempts > 3 {
+                    if self.elementReadAttempts > 100 {
                         self.dataGroupsToRead.removeFirst()
                         self.elementReadAttempts = 0
                     }
