@@ -18,9 +18,11 @@ public class TagReader {
     var maxDataLengthToRead : Int = 0xA0  // Should be able to use 256 to read arbitrary amounts of data at full speed BUT this isn't supported across all passports so for reliability just use the smaller amount.
 
     var progress : ((Int)->())?
+    let reader: PassportReader
 
-    init( tag: NFCISO7816Tag ) {
+    init( tag: NFCISO7816Tag, reader: PassportReader ) {
         self.tag = tag
+        self.reader = reader
     }
     
     func overrideDataAmountToRead( newAmount : Int ) {
@@ -318,15 +320,19 @@ public class TagReader {
             }
             Log.verbose("TagReader - [SM] \(toSend)" )
         }
-
+        let task = DispatchWorkItem {
+            completed(nil, NFCPassportReaderError.ResponseError("Tag response error / no response", 0, 0))
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2, execute: task)
         tag.sendCommand(apdu: toSend) { [unowned self] (data, sw1, sw2, error) in
+            task.cancel()
             if let error = error {
                 Log.error( "TagReader - Error reading tag - \(error.localizedDescription))" )
                 completed( nil, NFCPassportReaderError.ResponseError( error.localizedDescription, sw1, sw2 ) )
             } else {
                 Log.verbose( "TagReader - Received response" )
                 var rep = ResponseAPDU(data: [UInt8](data), sw1: sw1, sw2: sw2)
-
+                
                 if let sm = self.secureMessaging {
                     do {
                         rep = try sm.unprotect(rapdu:rep)
