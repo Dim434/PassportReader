@@ -492,6 +492,7 @@ extension PassportReader {
                     self.tagReader?.reduceDataReadingAmount()
                     completed(nil)
                 } else if errMsg == "Tag response error / no response" {
+                    self.updateReaderSessionMessage(alertMessage: .repolling)
                     self.readerSession?.restartPolling()
                 } else {
                     // Retry
