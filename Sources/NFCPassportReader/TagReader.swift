@@ -18,7 +18,7 @@ public class TagReader {
     var maxDataLengthToRead : Int = 0xA0  // Should be able to use 256 to read arbitrary amounts of data at full speed BUT this isn't supported across all passports so for reliability just use the smaller amount.
 
     var progress : ((Int)->())?
-    let reader: PassportReader
+    weak var reader: PassportReader?
 
     init( tag: NFCISO7816Tag, reader: PassportReader ) {
         self.tag = tag
@@ -42,7 +42,7 @@ public class TagReader {
             return
         }
         
-        selectFileAndRead(tag: tag, completed:completed )
+        selectFileAndRead(tag: tag, withTimeOut: true, completed:completed )
     }
     
     func getChallenge( completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
@@ -188,8 +188,8 @@ public class TagReader {
     
 
     var header = [UInt8]()
-    func selectFileAndRead( tag: [UInt8], completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() ) {
-        selectFile(tag: tag ) { [unowned self] (resp,err) in
+    func selectFileAndRead( tag: [UInt8], withTimeOut: Bool = false, completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() ) {
+        selectFile(tag: tag, withTimeOut: withTimeOut ) { [unowned self] (resp,err) in
             if let error = err {
                 completed( nil, error)
                 return
@@ -199,7 +199,7 @@ public class TagReader {
             let data : [UInt8] = [0x00, 0xB0, 0x00, 0x00, 0x00, 0x00,0x04]
             //print( "--------------------------------------\nSending \(binToHexRep(data))" )
             let cmd = NFCISO7816APDU(data:Data(data))!
-            self.send( cmd: cmd ) { [unowned self] (resp,err) in
+            self.send( cmd: cmd, withTimeOut: withTimeOut ) { [unowned self] (resp,err) in
                 guard let response = resp else {
                     completed( nil, err)
                     return
@@ -217,7 +217,7 @@ public class TagReader {
                 self.header = [UInt8](response.data[..<offset])//response.data
 
                 Log.debug( "TagReader - Number of data bytes to read - \(leftToRead)" )
-                self.readBinaryData(leftToRead: leftToRead, amountRead: offset, completed: completed)
+                self.readBinaryData(leftToRead: leftToRead, amountRead: offset, withTimeOut: withTimeOut, completed: completed)
 
             }
         }
@@ -261,15 +261,15 @@ public class TagReader {
     }
     
 
-    func selectFile( tag: [UInt8], completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
+    func selectFile( tag: [UInt8], withTimeOut: Bool = false, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
         
         let data : [UInt8] = [0x00, 0xA4, 0x02, 0x0C, 0x02] + tag
         let cmd = NFCISO7816APDU(data:Data(data))!
         
-        send( cmd: cmd, completed: completed )
+        send( cmd: cmd, withTimeOut: withTimeOut, completed: completed )
     }
     
-    func readBinaryData( leftToRead: Int, amountRead : Int, completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() ) {
+    func readBinaryData( leftToRead: Int, amountRead : Int, withTimeOut: Bool = false, completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() ) {
         var readAmount : Int = maxDataLengthToRead
         if maxDataLengthToRead != 256 && leftToRead < maxDataLengthToRead {
             readAmount = leftToRead
@@ -288,7 +288,7 @@ public class TagReader {
         )
 
         Log.verbose( "TagReader - data bytes remaining: \(leftToRead), will read : \(readAmount)" )
-        self.send( cmd: cmd ) { (resp,err) in
+        self.send( cmd: cmd, withTimeOut: withTimeOut ) { (resp,err) in
             guard let response = resp else {
                 completed( nil, err)
                 return
@@ -299,7 +299,7 @@ public class TagReader {
             let remaining = leftToRead - response.data.count
             Log.verbose( "TagReader - Amount of data left to read - \(remaining)" )
             if remaining > 0 {
-                self.readBinaryData(leftToRead: remaining, amountRead: amountRead + response.data.count, completed: completed )
+                self.readBinaryData(leftToRead: remaining, amountRead: amountRead + response.data.count, withTimeOut: withTimeOut, completed: completed )
             } else {
                 completed( self.header, err )
             }
@@ -308,7 +308,7 @@ public class TagReader {
     }
 
     
-    func send( cmd: NFCISO7816APDU, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
+    func send( cmd: NFCISO7816APDU, withTimeOut: Bool = false, completed: @escaping (ResponseAPDU?, NFCPassportReaderError?)->() ) {
         
         Log.verbose( "TagReader - sending \(cmd)" )
         var toSend = cmd
@@ -320,16 +320,23 @@ public class TagReader {
             }
             Log.verbose("TagReader - [SM] \(toSend)" )
         }
+        var changed = false
         let task = DispatchWorkItem {
-            completed(nil, NFCPassportReaderError.ResponseError("Tag response error / no response", 0, 0))
+            changed = true
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2, execute: task)
+        if withTimeOut {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5, execute: task)
+        }
         tag.sendCommand(apdu: toSend) { [unowned self] (data, sw1, sw2, error) in
-            task.cancel()
+            if changed {
+                completed(nil, NFCPassportReaderError.ResponseError("Tag response error / no response", 0, 0))
+                return
+            }
             if let error = error {
-                Log.error( "TagReader - Error reading tag - \(error.localizedDescription))" )
+                Log.error( "TagReader - Error reading tag - \(error.localizedDescription)" )
                 completed( nil, NFCPassportReaderError.ResponseError( error.localizedDescription, sw1, sw2 ) )
             } else {
+                task.cancel()
                 Log.verbose( "TagReader - Received response" )
                 var rep = ResponseAPDU(data: [UInt8](data), sw1: sw1, sw2: sw2)
                 

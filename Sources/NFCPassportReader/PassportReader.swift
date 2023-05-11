@@ -40,6 +40,8 @@ public class PassportReader : NSObject {
     // By default, Passive Authentication uses the new RFS5652 method to verify the SOD, but can be switched to use
     // the previous OpenSSL CMS verification if necessary
     public var passiveAuthenticationUsesOpenSSL : Bool = false
+    let queue = DispatchQueue(label: "core-nfc-processing-queue")
+    var processingSession: NFCReaderSession? = nil
 
     public init( logLevel: LogLevel = .info, masterListURL: URL? = nil ) {
         super.init()
@@ -93,10 +95,12 @@ public class PassportReader : NSObject {
         }
         
         if NFCTagReaderSession.readingAvailable {
-            readerSession = NFCTagReaderSession(pollingOption: [.iso14443], delegate: self, queue: nil)
-
+            readerSession = NFCTagReaderSession(pollingOption: [.iso14443], delegate: self, queue: self.queue)
+            
             self.updateReaderSessionMessage( alertMessage: NFCViewDisplayMessage.requestPresentPassport )
-            readerSession?.begin()
+            self.queue.async {
+                self.readerSession?.begin()
+            }
         }
     }
 }
@@ -189,7 +193,7 @@ extension PassportReader : NFCTagReaderSessionDelegate {
                 }
             }
 
-            DispatchQueue.global().async {
+            self.queue.async {
                 self.startReading( )
             }
         }
@@ -292,8 +296,10 @@ extension PassportReader {
             if self?.dataGroupsToRead.count != 0 {
                 // OK we've got more datagroups to go - we've probably failed security verification
                 // So lets re-establish BAC and try again
-                DispatchQueue.global().async {
-                    self?.doBACAuthentication()
+                self?.queue.async {
+                    Log.error("\(self?.readerSession)")
+                    
+                    self?.readerSession?.restartPolling()
                 }
             } else {
                 if let error = error {
@@ -470,7 +476,7 @@ extension PassportReader {
                 // E.g. we failed to read the last Datagroup because its protected and we can't
                 let errMsg = err?.value ?? "Unknown  error"
                 Log.error( "ERROR(readNext) - \(errMsg)" )
-                if errMsg == "Session invalidated" || errMsg == "Class not supported" || errMsg == "Tag connection lost"  {
+                if errMsg == "Session invalidated" || errMsg == "Class not supported"  {
                     // Check if we have done Chip Authentication, if so, set it to nil and try to redo BAC
                     if self.caHandler != nil {
                         self.caHandler = nil
@@ -491,9 +497,15 @@ extension PassportReader {
                     // OK passport can't handle max length so drop it down
                     self.tagReader?.reduceDataReadingAmount()
                     completed(nil)
-                } else if errMsg == "Tag response error / no response" {
+                } else if errMsg.lowercased().contains( "tag response error / no response") || errMsg.lowercased().contains( "tag connection lost")
+                            || errMsg.lowercased().contains("tag is not connected"){
+                    Log.error("\(self.readerSession)")
+                    self.tagReader = nil
                     self.updateReaderSessionMessage(alertMessage: .repolling)
                     self.readerSession?.restartPolling()
+                    completed(nil)
+//                    self.updateReaderSessionMessage(alertMessage: .repolling)
+                    
                 } else {
                     // Retry
                     if self.elementReadAttempts > 100 {
