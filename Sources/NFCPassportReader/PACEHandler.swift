@@ -108,7 +108,8 @@ public class PACEHandler {
             Log.verbose("paceKey - \(binToHexRep(paceKey, asArray:true))" )
 
             // First start the initial auth call
-            tagReader.sendMSESetATMutualAuth(oid: paceOID, keyType: paceKeyType, completed: { [unowned self] response, error in
+            tagReader.sendMSESetATMutualAuth(oid: paceOID, keyType: paceKeyType, completed: { [weak self] response, error in
+                guard let `self` = self else { return }
                 if let error = error {
                     return handleError( "MSESatATMutualAuth", "Error - \(error.localizedDescription)" )
                 }
@@ -149,7 +150,8 @@ public class PACEHandler {
     /// Performs PACE Step 1- receives an encrypted nonce from the passport and decypts it with the  PACE key - derived from MRZ, CAN (not yet supported)
     func doStep1() {
         Log.debug("Doing PACE Step1...")
-        tagReader.sendGeneralAuthenticate(data: [], isLast: false, completed: { [unowned self] response, error in
+        tagReader.sendGeneralAuthenticate(data: [], isLast: false, completed: { [weak self] response, error in
+            guard let `self` = self else { return }
             if let error = error {
                 return handleError( "Step1", "Failed to send General Authenticate Step1 - \(error.localizedDescription)" )
             }

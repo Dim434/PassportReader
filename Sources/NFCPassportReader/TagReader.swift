@@ -141,7 +141,8 @@ public class TagReader {
         let INS_BSI_GENERAL_AUTHENTICATE : UInt8 = 0x86
         
         let cmd : NFCISO7816APDU = NFCISO7816APDU(instructionClass: instructionClass, instructionCode: INS_BSI_GENERAL_AUTHENTICATE, p1Parameter: 0x00, p2Parameter: 0x00, data: commandData, expectedResponseLength: lengthExpected)
-        send( cmd: cmd, completed: { [unowned self] (response, error) in
+        send( cmd: cmd, completed: { [weak self] (response, error) in
+            guard let `self` = self else { return }
             // Check for error
             if let error = error {
                 // If wrong length error
@@ -189,7 +190,8 @@ public class TagReader {
 
     var header = [UInt8]()
     func selectFileAndRead( tag: [UInt8], withTimeOut: Bool = false, completed: @escaping ([UInt8]?, NFCPassportReaderError?)->() ) {
-        selectFile(tag: tag, withTimeOut: withTimeOut ) { [unowned self] (resp,err) in
+        selectFile(tag: tag, withTimeOut: withTimeOut ) { [weak self] (resp,err) in
+            guard let `self` = self else { completed(nil,nil); return}
             if let error = err {
                 completed( nil, error)
                 return
@@ -199,8 +201,8 @@ public class TagReader {
             let data : [UInt8] = [0x00, 0xB0, 0x00, 0x00, 0x00, 0x00,0x04]
             //print( "--------------------------------------\nSending \(binToHexRep(data))" )
             let cmd = NFCISO7816APDU(data:Data(data))!
-            self.send( cmd: cmd, withTimeOut: withTimeOut ) { [unowned self] (resp,err) in
-                guard let response = resp else {
+            self.send( cmd: cmd, withTimeOut: withTimeOut ) { [weak self] (resp, err) in
+                guard let response = resp, let `self` = self else {
                     completed( nil, err)
                     return
                 }
@@ -327,7 +329,8 @@ public class TagReader {
         if withTimeOut {
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.5, execute: task)
         }
-        tag.sendCommand(apdu: toSend) { [unowned self] (data, sw1, sw2, error) in
+        tag.sendCommand(apdu: toSend) { [weak self] (data, sw1, sw2, error) in
+            guard let `self` = self else { return }
             if changed {
                 completed(nil, NFCPassportReaderError.ResponseError("Tag response error / no response", 0, 0))
                 return

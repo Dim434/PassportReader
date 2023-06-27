@@ -168,7 +168,8 @@ extension PassportReader : NFCTagReaderSessionDelegate {
                 
         // Connect to tag
         Log.debug( "tagReaderSession:connecting to tag - \(tag)" )
-        session.connect(to: tag) { [unowned self] (error: Error?) in
+        session.connect(to: tag) { [weak self] (error: Error?) in
+            guard let `self` = self else { return }
             if error != nil {
                 Log.debug( "tagReaderSession:failed to connect to tag - \(error?.localizedDescription ?? "Unknown error")" )
                 let errorMessage = NFCViewDisplayMessage.error(NFCPassportReaderError.ConnectionError)
@@ -185,7 +186,8 @@ extension PassportReader : NFCTagReaderSessionDelegate {
                 self.tagReader?.overrideDataAmountToRead(newAmount: newAmount)
             }
             
-            self.tagReader!.progress = { [unowned self] (progress) in
+            self.tagReader!.progress = { [weak self] (progress) in
+                guard let `self` = self else { return }
                 if let dgId = self.currentlyReadingDataGroup {
                     self.updateReaderSessionMessage( alertMessage: NFCViewDisplayMessage.readingDataGroupProgress(dgId, progress) )
                 } else {
@@ -215,7 +217,8 @@ extension PassportReader {
         }
         
         // Before we start the main work, lets try reading the EF.CardAccess
-        tagReader?.readCardAccess(completed: { [unowned self] data, error in
+        tagReader?.readCardAccess(completed: { [weak self] data, error in
+            guard let `self` = self else { return }
             var ca : CardAccess?
             if let data = data {
                 print( "Read CardAccess - data \(binToHexRep(data))" )
@@ -411,7 +414,8 @@ extension PassportReader {
         elementReadAttempts += 1
         
         self.updateReaderSessionMessage( alertMessage: NFCViewDisplayMessage.readingDataGroupProgress(dgId, 0) )
-        tagReader.readDataGroup(dataGroup:dgId) { [unowned self] (response, err) in
+        tagReader.readDataGroup(dataGroup:dgId) { [weak self] (response, err) in
+            guard let `self` = self else { return }
             self.updateReaderSessionMessage( alertMessage: NFCViewDisplayMessage.readingDataGroupProgress(dgId, 100) )
             if let response = response {
                 
@@ -432,7 +436,7 @@ extension PassportReader {
                             self.dataGroupsToRead = foundDGs
                         } else {
                             // We are reading specific datagroups but remove all the ones we've requested to be read that aren't actually available
-                            self.dataGroupsToRead = foundDGs.filter { dataGroupsToRead.contains($0) }
+                            self.dataGroupsToRead = foundDGs.filter { self.dataGroupsToRead.contains($0) }
                         }
                         
                         // If we are skipping secure elements then remove .DG3 and .DG4
@@ -447,7 +451,8 @@ extension PassportReader {
                                 
                                 // Do Chip authentication and then continue reading datagroups
                                 readNextDG = false
-                                self.caHandler?.doChipAuthentication() { [unowned self] (success) in
+                                self.caHandler?.doChipAuthentication() { [weak self] (success) in
+                                    guard let `self` = self else { return }
                                     
                                     self.passport.chipAuthenticationStatus = success ? .success : .failed
 

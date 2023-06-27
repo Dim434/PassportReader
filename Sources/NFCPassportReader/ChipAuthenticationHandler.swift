@@ -89,8 +89,8 @@ class ChipAuthenticationHandler {
         do {
             Log.info("Starting Chip Authentication!")
             // For each public key, do chipauth
-            try self.doCA( keyId: keyId, encryptionDetailsOID: chipAuthInfoOID, publicKey: chipAuthPublicKeyInfo.pubKey, completed: { [unowned self] (success) in
-                
+            try self.doCA( keyId: keyId, encryptionDetailsOID: chipAuthInfoOID, publicKey: chipAuthPublicKeyInfo.pubKey, completed: { [weak self] (success) in
+                guard let `self` = self else { return }
                 Log.info("Finished Chip Authentication - success - \(success)")
                 if !success {
                     self.doChipAuthenticationForNextPublicKey()
@@ -131,8 +131,8 @@ class ChipAuthenticationHandler {
         EVP_PKEY_CTX_free(pctx)
         
         // Send the public key to the passport
-        try sendPublicKey(oid: oid, keyId: keyId, pcdPublicKey: ephemeralKeyPair!, completed: { [unowned self] (response, err) in
-            
+        try sendPublicKey(oid: oid, keyId: keyId, pcdPublicKey: ephemeralKeyPair!, completed: { [weak self] (response, err) in
+            guard let `self` = self else { return }
             if let error = err {
                 print( "ERROR! - \(error.localizedDescription)" )
                 completed(false)
@@ -173,8 +173,9 @@ class ChipAuthenticationHandler {
             let wrappedKeyData = wrapDO( b:0x91, arr:keyData)
             self.tagReader?.sendMSEKAT(keyData: Data(wrappedKeyData), idData: Data(idData), completed: completed)
         } else if cipherAlg.hasPrefix("AES") {
-            self.tagReader?.sendMSESetATIntAuth(oid: oid, keyId: keyId, completed: { [unowned self] response, error in
+            self.tagReader?.sendMSESetATIntAuth(oid: oid, keyId: keyId, completed: { [weak self] response, error in
                 // Handle Error
+                guard let `self` = self else { return }
                 if let error = error {
                     completed(nil, error)
                 } else {
@@ -194,7 +195,8 @@ class ChipAuthenticationHandler {
         let isLast = gaSegments.isEmpty
         
         // send it
-        self.tagReader?.sendGeneralAuthenticate(data: segment, isLast: isLast, completed: { [unowned self] response, error in
+        self.tagReader?.sendGeneralAuthenticate(data: segment, isLast: isLast, completed: { [weak self] response, error in
+            guard let `self` = self else { return }
             if let error = error {
                 completed( nil, error )
             } else {

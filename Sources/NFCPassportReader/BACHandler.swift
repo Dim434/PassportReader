@@ -54,9 +54,9 @@ public class BACHandler {
         
         // get Challenge
         Log.debug( "BACHandler - Getting initial challenge" )
-        tagReader.getChallenge() { [unowned self] (response, error) in
+        tagReader.getChallenge() { [weak self] (response, error) in
             
-            guard let response = response else {
+            guard let response = response, let `self` = self else {
                 Log.error( "ERROR - \(error?.localizedDescription ?? "")" )
                 completed( error )
                 return
@@ -65,8 +65,8 @@ public class BACHandler {
             
             Log.debug( "BACHandler - Doing mutual authentication" )
             let cmd_data = self.authentication(rnd_icc: [UInt8](response.data))
-            tagReader.doMutualAuthentication(cmdData: Data(cmd_data)) { [unowned self] (response, error) in
-                guard let response = response else {
+            tagReader.doMutualAuthentication(cmdData: Data(cmd_data)) { [weak self] (response, error) in
+                guard let response = response, let `self` = self else {
                     Log.error( "ERROR - \(error?.localizedDescription ?? "")" )
                     completed( error )
                     return
